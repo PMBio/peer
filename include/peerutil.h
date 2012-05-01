@@ -15,7 +15,7 @@
 using namespace PEER;
 
 struct sPeerArgs{
-	bool no_residuals, no_X, no_W, no_Alpha,no_Z, add_mean, has_header;
+	bool no_residuals, no_X, no_W, no_Alpha,no_Z, add_mean, has_header, transpose, has_rownames;
 	string out_dir, expr_file, expr_file_std, cov_file, prior_file;
 	int n_factors, n_iter;
 	float alpha_pa, alpha_pb, eps_pa, eps_pb, bound_tolerance, var_tolerance, sigma_off;

@@ -28,6 +28,8 @@ sPeerArgs parseCmdlineArgs(int argc, char * const argv[]){
 		SwitchArg no_Alpha("","no_a_out","No output of weight precision", cmd, false);
 		SwitchArg add_mean("","add_mean","Add a covariate to model mean effect", cmd, false);
 		SwitchArg has_header("","has_header","Expression and covariates files have a header", cmd, false);
+		SwitchArg has_rownames("","has_rownames","Expression files have rownames", cmd, false);
+		SwitchArg transpose("","transpose","data is probes*samples (default is rows of samples)", cmd, false);
 		
 		ValueArg<std::string> out_dir("o","out_dir","Output directory",false,"peer_out","string", cmd);
 		ValueArg<std::string> expr_file("f","file","Expression data file",true,"","string", cmd);
@@ -53,8 +55,10 @@ sPeerArgs parseCmdlineArgs(int argc, char * const argv[]){
 		args.no_W = no_W.getValue();
 		args.no_Alpha = no_Alpha.getValue();
 		args.no_Z = no_Z.getValue();
+		args.transpose = transpose.getValue();
 		args.add_mean = add_mean.getValue();
 		args.has_header = has_header.getValue();
+		args.has_rownames = has_rownames.getValue();
 		args.out_dir = out_dir.getValue();
 		args.expr_file = expr_file.getValue();
 		args.expr_file_std = expr_file_std.getValue();
@@ -77,7 +81,7 @@ sPeerArgs parseCmdlineArgs(int argc, char * const argv[]){
 
 
 
-PMatrix parseCsv(string filename, bool header){
+PMatrix parseCsv(string filename, bool header, bool rownames){
 	csv_parser file_parser;	
 	vector< vector<float> > data;
 	file_parser.set_skip_lines(header);
@@ -101,11 +105,12 @@ PMatrix parseCsv(string filename, bool header){
 		
 		n_rows++;
 		n_cols = row.size();
-		for (int i = 0; i < n_cols; i++) {row_data.push_back(atof(row[i].c_str()));}
+		for (int i = (int)rownames; i < n_cols; i++) {row_data.push_back(atof(row[i].c_str()));}
 		data.push_back(row_data);
 	}
 	
 	// cast result into PMatrix
+    n_cols -= (int)rownames;
 	PMatrix result = PMatrix::Zero(n_rows, n_cols);
 	for (int i = 0; i < n_rows; ++i){
 		for (int j = 0; j < n_cols; ++j){
@@ -136,14 +141,23 @@ void writeCsv(string filename, PMatrix m){
 cPEER getInstance(sPeerArgs args){
 	
 	//main expr matrix
-	PMatrix expr = parseCsv(args.expr_file, args.has_header);
+	PMatrix expr = parseCsv(args.expr_file, args.has_header, args.has_rownames);
+	if(args.transpose){
+		expr.transposeInPlace();
+	}
+
 	//optional matrices
 	PMatrix expr_std = PMatrix();
 	PMatrix covs = PMatrix();
 	PMatrix prior = PMatrix();
-	if (args.cov_file.length() > 0) covs = parseCsv(args.cov_file, args.has_header);
-	if (args.expr_file_std.length() > 0) expr_std = parseCsv(args.expr_file_std, args.has_header);
-	if (args.prior_file.length() > 0) prior = parseCsv(args.prior_file, args.has_header);
+	if (args.cov_file.length() > 0) covs = parseCsv(args.cov_file, args.has_header, false);
+	if (args.expr_file_std.length() > 0) {
+        expr_std = parseCsv(args.expr_file_std, args.has_header, false);
+        if(args.transpose){
+            expr_std.transposeInPlace();
+        }
+    }
+	if (args.prior_file.length() > 0) prior = parseCsv(args.prior_file, args.has_header, false);
 	
 
 	
@@ -186,9 +200,17 @@ void write_output(cPEER& vb, sPeerArgs args){
     string out_dir = args.out_dir;
 	if (out_dir[strlen(out_dir.c_str()) - 1] != '/') {out_dir = concat(out_dir, "/");}
 
-	if (!args.no_residuals) writeCsv(concat(out_dir, "residuals.csv"), vb.getResiduals());
-	if (!args.no_W) writeCsv(concat(out_dir, "W.csv"), vb.W->E1);
-	if (!args.no_X) writeCsv(concat(out_dir, "X.csv"), vb.X->E1);
+    if(args.transpose)
+    {
+        if (!args.no_residuals) writeCsv(concat(out_dir, "residuals.csv"), vb.getResiduals());
+        if (!args.no_W) writeCsv(concat(out_dir, "W.csv"), vb.W->E1);
+        if (!args.no_X) writeCsv(concat(out_dir, "X.csv"), vb.X->E1);
+    }
+    else {
+        if (!args.no_residuals) writeCsv(concat(out_dir, "residuals.csv"), vb.getResiduals().transpose());
+        if (!args.no_W) writeCsv(concat(out_dir, "W.csv"), vb.W->E1.transpose());
+        if (!args.no_X) writeCsv(concat(out_dir, "X.csv"), vb.X->E1.transpose());
+    }
 	
 	//if sparse mode on, export indicator Z also
 	if(!isnull(vb.getSparsityPrior()))
